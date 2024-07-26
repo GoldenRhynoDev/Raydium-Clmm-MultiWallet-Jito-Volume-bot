@@ -1,15 +1,22 @@
-import { AMM_V4, Cluster, AMM_STABLE, Raydium, parseTokenAccountResp, sleep } from '@raydium-io/raydium-sdk-v2';
+import {
+  CLMM_PROGRAM_ID,
+  Cluster,
+  DEVNET_PROGRAM_ID,
+  Raydium,
+  parseTokenAccountResp,
+} from '@raydium-io/raydium-sdk-v2';
 
 import { Connection, PublicKey, Signer, Keypair, GetProgramAccountsFilter } from '@solana/web3.js';
 import { getOrCreateAssociatedTokenAccount, Account, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
 import bs58 from 'bs58';
 import { mnemonicToSeedSync } from 'bip39';
 import { derivePath } from 'ed25519-hd-key';
+import BN from 'bn.js';
 import { logger } from './logger';
 
-const VALID_PROGRAM_ID = new Set([AMM_V4.toBase58(), AMM_STABLE.toBase58()]);
+const VALID_PROGRAM_ID = new Set([CLMM_PROGRAM_ID.toBase58(), DEVNET_PROGRAM_ID.CLMM.toBase58()]);
 
-export const isValidAmm = (id: string) => VALID_PROGRAM_ID.has(id);
+export const isValidClmm = (id: string) => VALID_PROGRAM_ID.has(id);
 
 export const getTokenDecimal = async (connection: Connection, tokenAddress: PublicKey): Promise<number> => {
   try {
@@ -39,7 +46,11 @@ export const getCoinBalance = async (connection: Connection, pubKey: PublicKey):
   }
 };
 
-export const getTokenBalance = async (connection: Connection, tokenAccount: Account): Promise<number> => {
+export const getTokenBalance = async (
+  connection: Connection,
+  tokenAccount: Account,
+  walletAddress: PublicKey,
+): Promise<number> => {
   try {
     const balance = await connection.getTokenAccountBalance(tokenAccount.address);
     return balance?.value?.uiAmount ? balance?.value?.uiAmount : 0;
@@ -73,22 +84,20 @@ export const initSdk = async (connection: Connection, owner: Keypair, cluster: C
   return raydium;
 };
 
-// export const fetchTokenAccountData = async (connection: Connection, owner: Keypair) => {
-//   const solAccountResp = await connection.getAccountInfo(owner.publicKey);
-//   sleep(1000);
-//   const tokenAccountResp = await connection.getTokenAccountsByOwner(owner.publicKey, { programId: TOKEN_PROGRAM_ID });
-//   sleep(1000);
-//   const token2022Req = await connection.getTokenAccountsByOwner(owner.publicKey, { programId: TOKEN_2022_PROGRAM_ID });
-//   const tokenAccountData = parseTokenAccountResp({
-//     owner: owner.publicKey,
-//     solAccountResp,
-//     tokenAccountResp: {
-//       context: tokenAccountResp.context,
-//       value: [...tokenAccountResp.value, ...token2022Req.value],
-//     },
-//   });
-//   return tokenAccountData;
-// };
+export const fetchTokenAccountData = async (connection: Connection, owner: Keypair) => {
+  const solAccountResp = await connection.getAccountInfo(owner.publicKey);
+  const tokenAccountResp = await connection.getTokenAccountsByOwner(owner.publicKey, { programId: TOKEN_PROGRAM_ID });
+  const token2022Req = await connection.getTokenAccountsByOwner(owner.publicKey, { programId: TOKEN_2022_PROGRAM_ID });
+  const tokenAccountData = parseTokenAccountResp({
+    owner: owner.publicKey,
+    solAccountResp,
+    tokenAccountResp: {
+      context: tokenAccountResp.context,
+      value: [...tokenAccountResp.value, ...token2022Req.value],
+    },
+  });
+  return tokenAccountData;
+};
 
 export function getWallet(wallet: string): Keypair {
   // most likely someone pasted the private key in binary format
@@ -107,6 +116,8 @@ export function getWallet(wallet: string): Keypair {
   // most likely someone pasted base58 encoded private key
   return Keypair.fromSecretKey(bs58.decode(wallet));
 }
+export const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function getTokenAccountBalance(connection: Connection, wallet: string, mint_token: string) {
   const filters: GetProgramAccountsFilter[] = [
     {

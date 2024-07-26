@@ -1,12 +1,12 @@
 import {
-  ApiV3PoolInfoStandardItem,
-  AmmV4Keys,
+  ApiV3PoolInfoConcentratedItem,
+  ClmmKeys,
   ComputeClmmPoolInfo,
-  AmmRpcData,
+  PoolUtils,
+  ReturnTypeFetchMultiplePoolTickArrays,
   ApiV3Token,
   TickArray,
   Raydium,
-  sleep,
 } from '@raydium-io/raydium-sdk-v2';
 import {
   VersionedTransaction,
@@ -18,27 +18,29 @@ import {
   Keypair,
   ComputeBudgetInstruction,
 } from '@solana/web3.js';
-import fs from 'fs';
+
 import BN from 'bn.js';
 import {
   initSdk,
   logger,
-  isValidAmm,
+  isValidClmm,
+  sleep,
   getWallet,
   txVersion,
   RPC_ENDPOINT,
   POOL_ADDRESS,
-  COMPUTE_UNIT_PRICE,
   COMPUTE_UNIT_LIMIT,
+  COMPUTE_UNIT_PRICE,
 } from '../config';
 const poolId = POOL_ADDRESS;
 
 export const getPoolInfo = async (connection: Connection, wallet: Keypair) => {
   const raydium = await initSdk(connection, wallet, 'mainnet');
-  let poolInfo: ApiV3PoolInfoStandardItem;
+  let poolInfo: ApiV3PoolInfoConcentratedItem;
 
-  let poolKeys: AmmV4Keys | undefined;
-  let rpcData: AmmRpcData;
+  let poolKeys: ClmmKeys | undefined;
+  let clmmPoolInfo: ComputeClmmPoolInfo;
+  let tickCache: ReturnTypeFetchMultiplePoolTickArrays;
 
   if (raydium.cluster === 'mainnet') {
     // note: api doesn't support get devnet pool info, so in devnet else we go rpc method
@@ -46,111 +48,84 @@ export const getPoolInfo = async (connection: Connection, wallet: Keypair) => {
 
     const data = await raydium.api.fetchPoolById({ ids: poolId });
     sleep(1000);
-    poolInfo = data[0] as ApiV3PoolInfoStandardItem;
-    if (!isValidAmm(poolInfo.programId)) throw new Error('target pool is not AMM pool');
-
-    poolKeys = await raydium.liquidity.getAmmPoolKeys(poolId);
+    poolInfo = data[0] as ApiV3PoolInfoConcentratedItem;
+    if (!isValidClmm(poolInfo.programId)) throw new Error('target pool is not CLMM pool');
     sleep(1000);
-
-    rpcData = await raydium.liquidity.getRpcPoolInfo(poolId);
+    clmmPoolInfo = await PoolUtils.fetchComputeClmmInfo({
+      connection: raydium.connection,
+      poolInfo,
+    });
     sleep(1000);
+    tickCache = await PoolUtils.fetchMultiplePoolTickArrays({
+      connection: raydium.connection,
+      poolKeys: [clmmPoolInfo],
+    });
   } else {
-    const data = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
+    sleep(1000);
+    const data = await raydium.clmm.getPoolInfoFromRpc(poolId);
     poolInfo = data.poolInfo;
     poolKeys = data.poolKeys;
-    rpcData = data.poolRpcData;
+    clmmPoolInfo = data.computePoolInfo;
+    tickCache = data.tickData;
   }
 
   return {
-    raydium,
-    poolInfo,
-    poolKeys,
-    rpcData,
+    raydium: raydium,
+    poolInfo: poolInfo,
+    poolKeys: poolKeys,
+    clmmPoolInfo: clmmPoolInfo,
+    tickCache: tickCache,
   };
 };
 export const getAmountOut = async (
   raydium: Raydium,
-  poolInfo: ApiV3PoolInfoStandardItem,
-  rpcData: AmmRpcData,
-  inputMint: string,
-  amountIn: BN,
+  poolInfo: ApiV3PoolInfoConcentratedItem,
+  clmmPoolInfo: ComputeClmmPoolInfo,
+  tokenAmount: BN,
+  tickCache: ReturnTypeFetchMultiplePoolTickArrays,
   slippage: number,
+  flag: boolean = true, //true = sell
 ) => {
-  const [baseReserve, quoteReserve, status] = [rpcData.baseReserve, rpcData.quoteReserve, rpcData.status.toNumber()];
-
-  if (poolInfo.mintA.address !== inputMint && poolInfo.mintB.address !== inputMint)
-    throw new Error('input mint does not match pool');
-
-  const baseIn = inputMint === poolInfo.mintA.address;
-  const [mintIn, mintOut] = baseIn ? [poolInfo.mintA, poolInfo.mintB] : [poolInfo.mintB, poolInfo.mintA];
-  const out = raydium.liquidity.computeAmountOut({
-    poolInfo: {
-      ...poolInfo,
-      baseReserve,
-      quoteReserve,
-      status,
-      version: 4,
-    },
-    amountIn,
-    mintIn: mintIn.address,
-    mintOut: mintOut.address,
-    slippage: slippage, // range: 1 ~ 0.0001, means 100% ~ 0.01%
+  let tokenOut = flag ? poolInfo.mintA : poolInfo.mintB;
+  const { minAmountOut, remainingAccounts } = await PoolUtils.computeAmountOutFormat({
+    poolInfo: clmmPoolInfo,
+    tickArrayCache: tickCache[poolId],
+    amountIn: tokenAmount,
+    tokenOut: tokenOut,
+    slippage: slippage,
+    epochInfo: await raydium.fetchEpochInfo(),
   });
-  return out;
+  return {
+    minAmountOut,
+    remainingAccounts,
+  };
 };
 
 export const makeSwapTransaction = async (
   raydium: Raydium,
-  poolInfo: ApiV3PoolInfoStandardItem,
-  poolKeys: AmmV4Keys | undefined,
-  inputMint: string,
+  poolInfo: ApiV3PoolInfoConcentratedItem,
+  clmmPoolInfo: ComputeClmmPoolInfo,
+  poolKeys: ClmmKeys | undefined,
   amountIn: BN,
   amountOutMin: BN,
-  fixedSide: 'in' | 'out' = 'out',
+  remainingAccounts: PublicKey[],
+  swapMode: 'BUY' | 'SELL' = 'BUY',
 ) => {
-  const { transaction } = await raydium.liquidity.swap({
+  const inputMint = swapMode === 'BUY' ? poolInfo.mintA.address : poolInfo.mintB.address;
+  const { transaction } = await raydium.clmm.swap({
     poolInfo,
     poolKeys,
-    amountIn,
-    amountOut: amountOutMin,
-    fixedSide: fixedSide,
-    inputMint,
-    txVersion,
-    config: {
-      inputUseSolBalance: true, // default: true, if you want to use existed wsol token account to pay token in, pass false
-      outputUseSolBalance: true, // default: true, if you want to use existed wsol token account to receive token out, pass false
-      associatedOnly: true, // default: true, if you want to use ata only, pass true
+    inputMint: inputMint,
+    amountIn: amountIn,
+    amountOutMin: amountOutMin,
+    observationId: clmmPoolInfo.observationId,
+    ownerInfo: {
+      useSOLBalance: true,
     },
-    // computeBudgetConfig: {
-    //   microLamports: COMPUTE_UNIT_PRICE,
-    //   units: COMPUTE_UNIT_LIMIT,
-    // },
+    remainingAccounts,
+    txVersion,
   });
 
-  // return transaction;
-  // try {
-  //   const latestBlockhash = await raydium.connection.getLatestBlockhash({
-  //     commitment: 'finalized',
-  //   });
-  //   logger.info(`Send transaction attempt...`);
-
-  //   const result = await executeAndConfirm(raydium.connection, transaction as VersionedTransaction, latestBlockhash);
-  //   if (result.confirmed) {
-  //     logger.info(
-  //       {
-  //         url: `https://solscan.io/tx/${result.signature}`,
-  //       },
-  //       `Confirmed transaction`,
-  //     );
-  //     return transaction;
-  //   }
-  //   logger.info(`failed!`);
-  //   // return false;
-  // } catch (error) {
-  //   logger.error('Error confirming transaction');
-  //   logger.info('1000ms waiting...');
-  //   await sleep(1000);
-  // }
   return transaction as VersionedTransaction;
 };
 export const confirm = async (
@@ -178,6 +153,5 @@ export const executeAndConfirm = async (
     preflightCommitment: connection.commitment,
   });
   sleep(1000);
-
   return await confirm(connection, signature, latestBlockhash);
 };
