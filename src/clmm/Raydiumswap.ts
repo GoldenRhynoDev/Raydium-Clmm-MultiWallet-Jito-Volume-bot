@@ -47,21 +47,20 @@ export const getPoolInfo = async (connection: Connection, wallet: Keypair) => {
     // if you wish to get pool info from rpc, also can modify logic to go rpc method directly
 
     const data = await raydium.api.fetchPoolById({ ids: poolId });
-    sleep(1000);
+
     poolInfo = data[0] as ApiV3PoolInfoConcentratedItem;
     if (!isValidClmm(poolInfo.programId)) throw new Error('target pool is not CLMM pool');
-    sleep(1000);
+
     clmmPoolInfo = await PoolUtils.fetchComputeClmmInfo({
       connection: raydium.connection,
       poolInfo,
     });
-    sleep(1000);
+
     tickCache = await PoolUtils.fetchMultiplePoolTickArrays({
       connection: raydium.connection,
       poolKeys: [clmmPoolInfo],
     });
   } else {
-    sleep(1000);
     const data = await raydium.clmm.getPoolInfoFromRpc(poolId);
     poolInfo = data.poolInfo;
     poolKeys = data.poolKeys;
@@ -125,6 +124,8 @@ export const makeSwapTransaction = async (
     remainingAccounts,
     txVersion,
   });
+  // builder.addCustomComputeBudget({ units: COMPUTE_UNIT_LIMIT, microLamports: COMPUTE_UNIT_PRICE });
+  // const { transaction } = await builder.versionBuild({ txVersion });
 
   return transaction as VersionedTransaction;
 };
@@ -149,9 +150,9 @@ export const executeAndConfirm = async (
   latestBlockhash: BlockhashWithExpiryBlockHeight,
 ): Promise<{ confirmed: boolean; signature?: string; error?: string }> => {
   logger.debug('Executing transaction...');
+
   const signature = await connection.sendRawTransaction(transaction.serialize(), {
     preflightCommitment: connection.commitment,
   });
-  sleep(1000);
   return await confirm(connection, signature, latestBlockhash);
 };

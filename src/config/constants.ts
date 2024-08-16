@@ -34,6 +34,7 @@ export const MAX_BUY_QUANTITY: number = Number(retrieveEnvVariable('MAX_BUY_QUAN
 export const NUMBER_OF_WALLETS: number = Number(retrieveEnvVariable('NUMBER_OF_WALLETS', logger));
 export const SEND_SOL_AMOUNT: number = Number(retrieveEnvVariable('SEND_SOL_AMOUNT', logger));
 export const TRANSACTION_COUNT_PER_BUNDLE: number = Number(retrieveEnvVariable('TRANSACTION_COUNT_PER_BUNDLE', logger));
+export const BUFFER: number = Number(retrieveEnvVariable('BUFFER', logger));
 export const JITO_FEE = retrieveEnvVariable('JITO_FEE', logger);
 export const SLIPPAGE: number = Number(retrieveEnvVariable('SLIPPAGE', logger));
 export const COMPUTE_UNIT_LIMIT: number = Number(retrieveEnvVariable('COMPUTE_UNIT_LIMIT', logger));

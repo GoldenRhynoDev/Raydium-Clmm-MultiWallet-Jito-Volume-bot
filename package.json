@@ -5,9 +5,13 @@
   "scripts": {
     "dev": "node dist/main.js",
     "start": "ts-node src/main.ts",
+    "send": "ts-node src/send.ts",
+    "sell": "ts-node src/sell.ts",
     "build": "tsc",
     "gather": "ts-node src/gather.ts",
     "wallet": "ts-node src/wallets.ts",
+    "scan": "ts-node src/scan.ts",
+    "buy": "ts-node src/buy.ts",
     "format": "prettier --write src/**/*.ts"
   },
   "keywords": [
@@ -27,6 +31,7 @@
     "@types/jsonfile": "^6.1.4",
     "@types/node": "^14.11.2",
     "bip39": "^3.1.0",
+    "bluebird": "^3.7.2",
     "bs58": "^5.0.0",
     "decimal.js": "^10.4.3",
     "dotenv": "^16.4.5",
@@ -40,6 +45,7 @@
     "typescript": "^5.3.3"
   },
   "devDependencies": {
+    "@types/bluebird": "^3.5.42",
     "@types/bn.js": "^5.1.5",
     "npm-check-updates": "^16.14.11"
   }

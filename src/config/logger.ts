@@ -7,9 +7,6 @@ const transport = pino.transport({
 export const logger = pino(
   {
     level: 'info',
-    serializers: {
-      error: pino.stdSerializers.err,
-    },
     base: undefined,
   },
   transport,

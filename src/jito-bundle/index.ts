@@ -7,11 +7,11 @@ import {
   VersionedTransaction,
   BlockhashWithExpiryBlockHeight,
 } from '@solana/web3.js';
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, AxiosResponse } from 'axios';
 
-import { logger } from '../config';
-import { confirm } from '../amm/Raydiumswap';
-import { Currency, CurrencyAmount, sleep } from '@raydium-io/raydium-sdk-v2';
+import { logger, sleep } from '../config';
+import { confirm } from '../clmm/Raydiumswap';
+import { Currency, CurrencyAmount } from '@raydium-io/raydium-sdk-v2';
 import bs58 from 'bs58';
 
 const jitpTipAccounts = [
@@ -77,33 +77,29 @@ export const executeAndConfirmByJito = async (
     // const serializedTransactions = [serializedjitoFeeTx];
 
     // https://jito-labs.gitbook.io/mev/searcher-resources/json-rpc-api-reference/url
-    const endpoints = [
-      'https://mainnet.block-engine.jito.wtf/api/v1/bundles',
-      'https://amsterdam.mainnet.block-engine.jito.wtf/api/v1/bundles',
-      'https://frankfurt.mainnet.block-engine.jito.wtf/api/v1/bundles',
-      'https://ny.mainnet.block-engine.jito.wtf/api/v1/bundles',
-      'https://tokyo.mainnet.block-engine.jito.wtf/api/v1/bundles',
-    ];
+    const endpoint = 'https://ny.mainnet.block-engine.jito.wtf/api/v1/bundles';
+    let flag = false;
 
-    const requests = endpoints.map((url) =>
-      axios.post(url, {
+    try {
+      let result = await axios.post(endpoint, {
         jsonrpc: '2.0',
         id: 1,
         method: 'sendBundle',
         params: [serializedTransactions],
-      }),
-    );
+      });
+      if (result) {
+        flag = true;
+      }
+    } catch (error) {
+      logger.error((error as AxiosError).code);
+    }
 
     logger.info('Sending transactions to endpoints...');
 
-    const results = await Promise.all(requests.map((p) => p.catch((e) => e)));
-
-    const successfulResults = results.filter((result) => !(result instanceof Error));
-
-    if (successfulResults.length > 0) {
+    if (flag) {
       logger.info(`At least one successful response`);
       logger.info(`Confirming jito transaction...`);
-      sleep(1000);
+
       return await confirm(connection, jitoTxsignature, latestBlockhash);
     } else {
       logger.info(`No successful responses received for jito`);

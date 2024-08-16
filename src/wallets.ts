@@ -4,7 +4,6 @@ import bs58 from 'bs58';
 import { NUMBER_OF_WALLETS } from './config';
 
 let newWallets = [];
-console.log('here');
 for (let i = 0; i < NUMBER_OF_WALLETS; i++) {
   // Generating a new random Solana keypair
   const keypair = Keypair.generate();
