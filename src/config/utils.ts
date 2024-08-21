@@ -75,43 +75,25 @@ export function getWallet(wallet: string): Keypair {
   return Keypair.fromSecretKey(bs58.decode(wallet));
 }
 export async function getTokenAccountBalance(connection: Connection, wallet: string, mint_token: string) {
-  try {
-    const filters: GetProgramAccountsFilter[] = [
-      {
-        dataSize: 165, //size of account (bytes)
-      },
-      {
-        memcmp: {
-          offset: 32, //location of our query in the account (bytes)
-          bytes: wallet, //our search criteria, a base58 encoded string
-        },
-      },
-      //Add this search parameter
-      {
-        memcmp: {
-          offset: 0, //number of bytes
-          bytes: mint_token, //base58 encoded string
-        },
-      },
-    ];
+  const token_account = await connection.getParsedTokenAccountsByOwner(
+    new PublicKey(wallet),
+    { programId: TOKEN_PROGRAM_ID },
+    'finalized',
+  );
+  const token_2022_accounts = await connection.getParsedTokenAccountsByOwner(
+    new PublicKey(wallet),
+    { programId: TOKEN_2022_PROGRAM_ID },
+    'finalized',
+  );
+  let token_accounts = [...token_account.value, ...token_2022_accounts.value];
 
-    const accounts = await connection.getParsedProgramAccounts(TOKEN_PROGRAM_ID, {
-      filters: filters,
-    });
-
-    for (const account of accounts) {
-      const parsedAccountInfo: any = account.account.data;
-      const mintAddress: string = parsedAccountInfo['parsed']['info']['mint'];
-      const tokenBalance: number = parseInt(parsedAccountInfo['parsed']['info']['tokenAmount']['amount']);
-
-      if (tokenBalance) {
-        return tokenBalance;
-      }
+  for (const account of token_accounts) {
+    const parsedAccountInfo: any = account.account.data;
+    if (parsedAccountInfo.parsed.info.mint === mint_token) {
+      return parsedAccountInfo.parsed.info.tokenAmount;
     }
-    return 0;
-  } catch (error) {
-    throw error;
   }
+  return null;
 }
 export const fetchWithTimeout = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const maxRetries = 300; // Number of retry attempts
