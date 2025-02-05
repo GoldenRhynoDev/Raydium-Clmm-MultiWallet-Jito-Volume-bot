@@ -78,22 +78,21 @@ export async function getTokenAccountBalance(connection: Connection, wallet: str
   const token_account = await connection.getParsedTokenAccountsByOwner(
     new PublicKey(wallet),
     { programId: TOKEN_PROGRAM_ID },
-    'finalized',
+    'confirmed',
   );
-  const token_2022_accounts = await connection.getParsedTokenAccountsByOwner(
-    new PublicKey(wallet),
-    { programId: TOKEN_2022_PROGRAM_ID },
-    'finalized',
-  );
-  let token_accounts = [...token_account.value, ...token_2022_accounts.value];
-
-  for (const account of token_accounts) {
+  for (const account of token_account.value) {
     const parsedAccountInfo: any = account.account.data;
     if (parsedAccountInfo.parsed.info.mint === mint_token) {
-      return parsedAccountInfo.parsed.info.tokenAmount;
+      return {
+        uiAmount: parsedAccountInfo.parsed.info.tokenAmount.uiAmount,
+        amount: parsedAccountInfo.parsed.info.tokenAmount.amount,
+      };
     }
   }
-  return null;
+  return {
+    uiAmount: 0,
+    amount: 0,
+  };
 }
 export const fetchWithTimeout = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const maxRetries = 300; // Number of retry attempts
@@ -167,26 +166,39 @@ export const getTokenAccount = async (
   connection: Connection,
   wallet: Signer,
   tokenAddress: PublicKey,
+  is_token_2022: boolean = false,
 ): Promise<Account> => {
   try {
     await sleep(200);
-    const associatedToken = getAssociatedTokenAddressSync(new PublicKey(tokenAddress), wallet.publicKey);
+    const associatedToken = getAssociatedTokenAddressSync(
+      new PublicKey(tokenAddress),
+      wallet.publicKey,
+      false,
+      TOKEN_PROGRAM_ID,
+    );
 
     // This is the optimal logic, considering TX fee, client-side computation, RPC roundtrips and guaranteed idempotent.
     // Sadly we can't do this atomically.
     let account: Account;
     try {
-      account = await getAccount(connection, associatedToken);
+      account = await getAccount(connection, associatedToken, 'confirmed', TOKEN_PROGRAM_ID);
     } catch (error: unknown) {
       // TokenAccountNotFoundError can be possible if the associated address has already received some lamports,
       // becoming a system account. Assuming program derived addressing is safe, this is the only case for the
       // TokenInvalidAccountOwnerError in this code path.
       if (error instanceof TokenAccountNotFoundError || error instanceof TokenInvalidAccountOwnerError) {
         // As this isn't atomic, it's possible others can create associated accounts meanwhile.
+
         try {
           const latestBlockhash = await connection.getLatestBlockhash();
           const instructions = [
-            createAssociatedTokenAccountInstruction(wallet.publicKey, associatedToken, wallet.publicKey, tokenAddress),
+            createAssociatedTokenAccountInstruction(
+              wallet.publicKey,
+              associatedToken,
+              wallet.publicKey,
+              tokenAddress,
+              TOKEN_PROGRAM_ID,
+            ),
             ComputeBudgetProgram.setComputeUnitPrice({ microLamports: COMPUTE_UNIT_PRICE }),
             ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNIT_LIMIT }),
           ];
@@ -210,7 +222,7 @@ export const getTokenAccount = async (
         }
 
         // Now this should always succeed
-        account = await getAccount(connection, associatedToken);
+        account = await getAccount(connection, associatedToken, 'confirmed', TOKEN_PROGRAM_ID);
       } else {
         throw error;
       }

@@ -22,6 +22,7 @@ import {
   getTokenAccount,
   getTokenBalance,
   getTokenDecimal,
+  getTokenAccountBalance,
   JITO_FEE,
   fetchWithTimeout,
   sleep,
@@ -145,28 +146,22 @@ const balance = async () => {
 
         if (new BN(lampAmount).lt(new BN(solAmount + BUFFER * 10 ** 9))) {
           //Check if it could sell
-
-          let tokenAccount;
-          try {
-            tokenAccount = await getTokenAccount(connection, walletArray[i].wallet, new PublicKey(TOKEN_ADDRESS));
-          } catch (error) {
-            walletArray = [...walletArray.filter((item, index) => index !== i)];
-            walletAmount--;
-            i--;
-            continue;
-          }
           let tokenAmount = getRandomNumber(MIN_SELL_QUANTITY, MAX_SELL_QUANTITY);
 
           let tokenUnitAmount = Number(tokenAmount) * 10 ** tokenDecimal;
 
-          const token_in_wallet: number = await getTokenBalance(connection, tokenAccount);
+          let token_in_wallet = await getTokenAccountBalance(
+            connection,
+            walletArray[i].wallet.publicKey.toBase58(),
+            TOKEN_ADDRESS,
+          );
           if (lampAmount / LAMPORTS_PER_SOL < 0.0015) {
             walletArray = [...walletArray.filter((item, index) => index !== i)];
             walletAmount--;
             i--;
             continue;
           } else {
-            if (token_in_wallet > +tokenAmount) {
+            if (token_in_wallet.uiAmount > +tokenAmount) {
               const { minAmountOut, remainingAccounts } = await getAmountOut(
                 raydium,
                 clmmPoolInfomation.poolInfo,
@@ -220,27 +215,21 @@ const balance = async () => {
           bundleTransactions = [...bundleTransactions, transaction];
         }
       } else {
-        let tokenAccount;
-        try {
-          tokenAccount = await getTokenAccount(connection, walletArray[i].wallet, new PublicKey(TOKEN_ADDRESS));
-        } catch (error) {
-          walletArray = [...walletArray.filter((item, index) => index !== i)];
-          walletAmount--;
-          i--;
-          continue;
-        }
         let tokenAmount = getRandomNumber(MIN_SELL_QUANTITY, MAX_SELL_QUANTITY);
         let lampAmount = await getCoinBalance(connection, walletArray[i].wallet.publicKey);
         let tokenUnitAmount = Number(tokenAmount) * 10 ** tokenDecimal;
-        let token_in_wallet = await getTokenBalance(connection, tokenAccount);
-
+        let token_in_wallet = await getTokenAccountBalance(
+          connection,
+          walletArray[i].wallet.publicKey.toBase58(),
+          TOKEN_ADDRESS,
+        );
         if (lampAmount / LAMPORTS_PER_SOL < 0.0015) {
           walletArray = [...walletArray.filter((item, index) => index !== i)];
 
           walletAmount--;
           i--;
         } else {
-          if (token_in_wallet < +tokenAmount) {
+          if (token_in_wallet.uiAmount < +tokenAmount) {
             const { minAmountOut: _minAmountOut } = await getAmountOut(
               raydium,
               clmmPoolInfomation.poolInfo,

@@ -43,13 +43,12 @@ async function scan() {
   for (let i = 0; i < wallets.length; i++) {
     try {
       let keypair: Keypair = getWallet(wallets[i].secretKey);
-      let fromTokenAccount!: Account;
-      let tokenAmount = await getTokenAccountBalance(connection, keypair.publicKey.toBase58(), TOKEN_ADDRESS);
+      let token_in_wallet = await getTokenAccountBalance(connection, wallets[i].publicKey, TOKEN_ADDRESS);
       const walletBalance = await getCoinBalance(connection, keypair.publicKey);
       walletArray.push({
         publicKey: keypair.publicKey.toBase58(),
         secretKey: bs58.encode(keypair.secretKey),
-        tokenBalance: tokenAmount / 10 ** 9,
+        tokenBalance: token_in_wallet.uiAmount,
         solBalance: walletBalance / 10 ** 9,
       });
     } catch (e: unknown) {
@@ -58,5 +57,6 @@ async function scan() {
   }
   filename = filename + getFormattedDate() + '.json';
   fs.writeFileSync(filename, JSON.stringify(walletArray));
+  logger.info('Wallet scanning is finished!!');
 }
 scan();
